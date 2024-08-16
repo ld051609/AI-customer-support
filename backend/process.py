@@ -88,16 +88,4 @@ def retrieve_from_pinecone(message):
     print(results)
     return results['matches']
 
-# Main chatbot function
-def chatbot(message):
-    # Retrieve similar messages
-    matches = retrieve_from_pinecone(message)
-    
-    if matches:
-        # If a close match is found, return the stored metadata
-        closest_match = matches[0]
-        return f"Title: {closest_match['metadata']['title']}, URL: {closest_match['metadata']['url']}"
-    else:
-        # If no close match is found, generate a new response and return it
-        response = generate_response(message)
-        return response
+
