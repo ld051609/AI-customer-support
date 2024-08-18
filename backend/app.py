@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from process import chatbot, retrieve_from_pinecone, generate_response
+from process import retrieve_from_pinecone, generate_response
 app = Flask(__name__)
 CORS(app)
 
@@ -19,7 +19,7 @@ def chatbot(message):
         return response
 
 @app.route('/', methods=['POST'])
-def chatbot():
+def get_message():
     message = request.json['message']
     if not message:
         print("Please provide a message")
