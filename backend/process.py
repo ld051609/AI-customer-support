@@ -1,20 +1,25 @@
-from pinecone import Pinecone, ServerlessSpec
 from openai import OpenAI
 from langchain_community.embeddings import OpenAIEmbeddings
 import os
 from dotenv import load_dotenv
+from pinecone import Pinecone, ServerlessSpec
 load_dotenv()
+import tiktoken  
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 
-# Initialize Pinecone
-pc = Pinecone(api_key=PINECONE_API_KEY)
+# Initialize OpenAI client
+client = OpenAI(api_key=OPENAI_API_KEY)
 
-# Set up Pinecone index
-index_name = 'ai-customer-support'
-if index_name not in pc.list_indexes().names():
-    # Create a new index if it does not exist
+# Initialize Pinecone (use correct import if using newer version)
+pc = Pinecone(api_key=os.environ.get("PINECONE_API_KEY"))
+index_name = 'ai-customer-support-chatbot-2'
+
+if index_name in pc.list_indexes().names():
+    pc.delete_index(index_name)
+
+if index_name not in pc.list_indexes():
     pc.create_index(
         name=index_name,
         dimension=1536,
@@ -24,23 +29,43 @@ if index_name not in pc.list_indexes().names():
             region='us-east-1'
         )
     )
-# Connect to index
+
+# Connect to Pinecone index
 index = pc.Index(index_name)
 
-# Set OpenAI API key
-client = OpenAI(
-    api_key=OPENAI_API_KEY,
-)
 
-# Generate embeddings
+# Function to count tokens using tiktoken
+def count_tokens(text):
+    encoder = tiktoken.get_encoding("cl100k_base")
+    tokens = encoder.encode(text)
+    return len(tokens)
+
+# Function to split text into chunks based on token count
+def split_into_chunks(text, max_tokens):
+    encoder = tiktoken.get_encoding("cl100k_base")
+    tokens = encoder.encode(text)
+    chunks = [tokens[i:i + max_tokens] for i in range(0, len(tokens), max_tokens)]
+    return [encoder.decode(chunk) for chunk in chunks]
+
+# Function to generate embeddings
 def generate_embeddings(text, model="text-embedding-ada-002"):
-    text = text.replace("\n", " ")
-    response = client.embeddings.create(input = [text], model=model)
-    embedding = response.data[0].embedding
-    return embedding
+    max_tokens = 8192
+    chunks = split_into_chunks(text, max_tokens)
+    
+    embeddings = []
+    for chunk in chunks:
+        response = client.embeddings.create(
+            input=[chunk],
+            model=model
+        )
+        # Access the embedding from the response object
+        embedding = response.data[0].embedding
+        embeddings.append(embedding)
+    
+    return embeddings
 
 
-# Create chatbot response using OpenAI
+# Function to create chatbot response using OpenAI
 def generate_response(prompt):
     response = client.chat.completions.create(
         model="gpt-3.5-turbo",
@@ -49,53 +74,14 @@ def generate_response(prompt):
             {"role": "user", "content": prompt}
         ]
     )
-    res = response.choices[0].message.content
-    return res
+    return response.choices[0].message.content
 
-# Store embeddings and response in Pinecone
-def store_in_pinecone(message, response):
-    embedding = generate_embeddings(message)
-
-    index.upsert(
-        vectors=[
-            {
-                "id": message,
-                "values": embedding,
-                "metadata": {
-                    "response": response
-                }
-            }
-        ]
-    )
-
-# Retrieve response from Pinecone based on a query
+# Function to retrieve response from Pinecone based on a query
 def retrieve_from_pinecone(message):
     embedding = generate_embeddings(message)
     results = index.query(
         vector=embedding,
-        top_k=1,
+        top_k=3,
         include_metadata=True
     )
-    print(results)
     return results['matches']
-
-
-# Main chatbot function
-def chatbot(message):
-    # Retrieve similar messages
-    matches = retrieve_from_pinecone(message)
-    
-    if matches:
-        # If a close match is found, return the stored response
-        closest_match = matches[0]
-        stored_response = closest_match['metadata']['response']
-        return stored_response
-    else:
-        # If no close match is found, generate a new response
-        response = generate_response(message)
-        store_in_pinecone(message, response)
-        return response
-    
-
-
-
