@@ -1,11 +1,24 @@
 'use client'
 import React, { useState } from 'react';
 import './Chatbot.css'; // Import the CSS file
-
+import Signin from './login/page';
+import { onAuthStateChanged } from 'firebase/auth';
+import { auth } from './firebase/config';
 const Chatbot = () => {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
+  const [userSignedIn, setUserSignedIn] = useState(false);
+
+
+  onAuthStateChanged(auth, (user) => {
+    if (user) {
+      setUserSignedIn(true);
+    } else {
+      setUserSignedIn(false);
+    }
+  })
+
 
   const sendMessage = async () => {
     setIsStreaming(true);
@@ -31,6 +44,9 @@ const Chatbot = () => {
     setInput('');
     setIsStreaming(false);
   };
+  if(!userSignedIn) {
+    return <Signin />
+  }
 
   return (
     <div className='main-container'>
